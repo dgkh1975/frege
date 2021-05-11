@@ -58,18 +58,18 @@ Since the purity information is carried through the **type system**, the compile
 **2. Expressive code**
 
 Much can be achieved in Frege in one line of code and here is an example that you can paste into the
-[Online REPL](http://try.frege-lang.org/). It calculates [pythagorean triples](https://en.wikipedia.org/wiki/Pythagorean_triple) below `10` with the help of a list comprehension:
+[Online REPL](http://try.fregelang.org/). It calculates [pythagorean triples](https://en.wikipedia.org/wiki/Pythagorean_triple) below `10` with the help of a list comprehension:
 
     [ (x,y,z) | x <- [1..10], y <- [x..10], z <- [x..10], x*x + y*y == z*z ]
     
-After execution you should see a list of triples containing the solutions `(3, 4, 5)` and `(6, 8, 10)`. 
+After execution, you should see a list of triples containing the solutions `(3, 4, 5)` and `(6, 8, 10)`. 
     
 Such a comprehension reads almost like an SQL statement: 
 * _select_ the triple `(x,y,z)`
 * with `x` drawn _from_ the list of `1` to `10`, `y` from `x` to `10`, and `z` from `x` to `10`
 * _where_ `x*x + y*y == z*z`
 
-> There are much more elegant and efficient ways to calculate the triples but those are a bit less obvious.
+> There are much more elegant and efficient ways to calculate the triples, but those are a bit less obvious.
 
 **3. No mutable state**
 
@@ -89,18 +89,18 @@ cosines = iterate cos 1.0
 pairsOf xs = zip xs (tail xs)
 head [ x | (x,y) <- pairsOf cosines, x == y] 
 ```
-After execution it should show you the value
+After execution, it should show you the value
 
      0.7390851332151607
 
-The code is most likely incomprehensible for a Frege/Haskell newcomer at first but it becomes
+The code is most likely incomprehensible for a Frege/Haskell newcomer at first, but it becomes
 less intimidating once you know the parts. With a bit of experience, you may even find it
 clear and obvious.
-* Again, we have a list comprehension. We get a list of `x` values but we only need the first element, the `head`.
+* Again, we have a list comprehension. We get a list of `x` values, but we only need the first element, the `head`.
 * The `x` comes from an `(x,y)` pair where `x == y`.
 * The `(x,y)` pair is drawn from a list of pairs of cosine values.
 * The `cosines` are an _infinite_ list of values that starts with `1.0` and then `iterate`s to `cos(1.0)`, `cos(cos(1.0))`, `cos(cos(cos(1.0)))`, and so forth.
-* Please note that the `=` signs do _not_ denote assignment but a definition. There are no assignment in Frege!
+* Please note that the `=` signs do _not_ denote an assignment but a definition. There are no assignments in Frege!
 * The `pairsOf` function works on any list of values to create pairs of any adjacent values.
 It uses `zip`, which is an often-used construction for this task, but the details are not relevant here.
 
@@ -140,7 +140,7 @@ many (free) books, publications, tutorials, online courses, and considerable ind
 
 Frege gives you the opportunity to **use your skills on the JVM**.
 Most idiomatic Haskell code will run in Frege unmodified or with only minimal, obvious adaptations.
-Even more important: you can bring your purely functional problem solution strategies to your Java projects.
+Even more important: you can bring your purely functional solution strategies to your Java projects.
 
 From now on you can also enjoy on the JVM:
 * the terse Haskell syntax
@@ -170,27 +170,28 @@ Just click the audio symbol in the left (german) part.
 Project State
 -------------
 
-The compiler, an Eclipse plugin and a provisional version of the documentation can be [downloaded](https://github.com/Frege/frege/releases). 
+The compiler, an Eclipse plugin, and a provisional version of the documentation can be [downloaded](https://github.com/Frege/frege/releases). 
 Note that Frege requires at least JDK 7 to compile and run programs.
 
 A number of tools are **written in Frege**:
 * the Frege compiler itself,
 * the Frege [standard library]( http://www.frege-lang.org/doc/frege/Prelude.html),
 * the Frege [command-line REPL](https://github.com/Frege/frege-repl),
-* the Frege web-based, full-stack [interactive online REPL (currently disabled since we have to move the server)](http://try.frege-lang.org/),
+* the Frege web-based, full-stack [interactive online REPL](http://try.fregelang.org/),
 * the [FregeFX REPL](https://github.com/Dierk/frepl-gui/blob/master/README.adoc) - a JavaFX view on the REPL,
 * the Frege [Eclipse plugin](https://github.com/Frege/eclipse-plugin), 
 * and the documentation tool.
 
 This should speak for itself regarding stability, functional completeness and performance of the language.
 
-The documentation is provisional and the library supports almost all of the Haskell 2010 standard library
+The documentation is provisional, and the library supports almost all of the Haskell 2010 standard library
 with the remaining [known differences](https://github.com/Frege/frege/wiki/Differences-between-Frege-and-Haskell)
 being there for good reason.
 
 See the [Getting Started](https://github.com/Frege/frege/wiki/Getting-Started) page for 
 getting started at the command-line or read the [Eclipse plugin](https://github.com/Frege/eclipse-plugin) page.
-You can develop [Frege inside Intellij IDEA](https://github.com/Frege/frege/wiki/Using-Frege-in-Intellij-IDEA)
+You can develop [Frege inside Intellij IDEA](https://github.com/Frege/frege/wiki/Using-Frege-in-Intellij-IDEA) with an
+Intellj IDEA plugin being under [active development](https://github.com/psurkov/intellij-frege)
 and there is build automation support for
 Maven, Gradle, Leiningen, SBT, and Bazel.
 
@@ -200,7 +201,7 @@ Related Projects
 ----------------
 
 * [Hoogle for Frege (currently disabled due to domain issues)](http://hoogle.haskell.org:8081/), a Frege API search engine, by Neil Mitchell and Marimuthu Madasamy
-* The REPL projects, consisting of [core JSR 223 scripting support](https://github.com/Frege/frege-interpreter), [interface for the command-line](https://github.com/Frege/frege-repl) and [online REPL](http://86.119.37.112:9999), all written and maintained by Marimuthu Madasamy, and the [FregeFX REPL](https://github.com/Dierk/frepl-gui/blob/master/README.adoc) with a JavaFX view by Dierk König
+* The REPL projects, consisting of [core JSR 223 scripting support](https://github.com/Frege/frege-interpreter), [interface for the command-line](https://github.com/Frege/frege-repl) and [online REPL](http://try.fregelang.org), all written and maintained by Marimuthu Madasamy, and the [FregeFX REPL](https://github.com/Dierk/frepl-gui/blob/master/README.adoc) with a JavaFX view by Dierk König
 * Support for [web applications and web services](https://github.com/Frege/frege/wiki/Frege-for-Web-Applications) 
 * [Maven Compiler Plugin for the Frege language](https://github.com/Frege/frege-maven-plugin), by Mark Derricut 
 * [Frege compiler/library as an OSGi bundle](https://github.com/talios/frege-bundle), by Mark Derricut 
@@ -221,7 +222,7 @@ If you are interested in contributing, here are some hot topics:
 
 * Write Frege code to support more of the Java API.
 * Port Haskell [libraries](https://github.com/Frege/frege/wiki/Libraries) or tools.
-* Open issues in the issues tracker if you find bugs, errors in documentation, etc.
+* Open issues in the issue tracker if you find bugs, errors in documentation, etc.
 * [Open issues](https://github.com/Frege/frege-gradle-plugin/issues) in the tooling like [this one](https://github.com/Frege/frege-gradle-plugin/issues/41)
 * Help make Frege popular by writing code for projects like [Rosetta Code](http://rosettacode.org/wiki/Rosetta_Code), or [PLEAC](http://pleac.sourceforge.net).
 * Contribute to the related projects mentioned above, or make your own.
@@ -300,7 +301,7 @@ API Docs
 Copyright and License
 ---------------------
 
-Copyright (c) Ingo Wechsung, 2011-2020. All rights reserved.
+Copyright (c) Ingo Wechsung, 2011-2021. All rights reserved.
 The use and distribution terms for this software are covered by the
 [BSD 3-clause license](http://opensource.org/licenses/BSD-3-Clause)
 which can be found in the file LICENSE.txt at the root of this distribution.
