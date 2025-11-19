@@ -4,6 +4,7 @@ module frege.compiler.passes.Instances where
 -- import  Data.TreeMap as TM(TreeMap, each, keys, values, insert)
 import  Data.List  as  DL(uniqBy, sort, sortBy)
 import  frege.lib.PP(text, msgdoc)
+import Control.monad.State
 
 -- import  Compiler.enums.Flags  as  Compilerflags(TRACE3, TRACE4)
 import  Compiler.enums.TokenID
@@ -21,6 +22,7 @@ import  Compiler.types.Types
 import  Compiler.types.SourceDefinitions
 import  Compiler.types.Symbols
 import  Compiler.types.Global  as  G
+import  Compiler.types.ConstructorField
 import  Compiler.types.AbstractJava(rawName)
 
 import  Compiler.common.Errors  as  E()
@@ -31,6 +33,30 @@ import  Compiler.classes.Nice
 import  frege.compiler.Utilities  as  U(vSym)
 import  frege.compiler.passes.Enter(enter, isInstOrDerive)
 import  frege.compiler.gen.java.Common(sigmaJT)
+
+-- import Ide.Utilities(label)
+import  Compiler.common.Types as T
+import Compiler.enums.Flags
+verbose :: Global -> SigmaT QName -> String
+verbose g t
+    | otherwise    = t.rho.nicer g
+label ∷ Global → SymbolT a → String
+label g SymI{clas,typ} = nicer (instanceHead clas typ.rho) g
+                            -- ++ " " ++ clas.nicer g ++ "  "   ++ verbose g typ
+label g SymV{name,typ} = name.base    ++ dcolon g ++ verbose g typ 
+label g SymD{name,typ} = name.base    ++ dcolon g ++ verbose g typ
+label g SymC{name,tau} = name.base    ++ dcolon g ++ show tau.kind
+label g SymT{name, nativ = Just n, pur}
+    | pur       = name.base ++ dcolon g ++ "immutable native " ++ n
+    | otherwise = name.base ++ dcolon g ++ "mutable native " ++ n            
+label g SymA{name,typ} = name.base    ++ " = " ++ typ.rho.nicer gspecial
+    where 
+        gspecial = g.{options <- _.{flags <- Flags.flagSet SPECIAL}}   
+label g sym
+    | sym.{kind?}      = sym.name.base ++ dcolon g ++ show sym.kind
+    | otherwise        = sym.name.base 
+                    
+dcolon _ = "::"
 
 
 {--
@@ -55,7 +81,8 @@ deriveInst (d@DrvDcl {pos}) = do
         clas <- defaultXName pos (TName pPreludeBase "Eq") d.clas
         typ  <- U.transSigma d.typ
         case instTSym typ g of
-            Just (sym@SymT {env}) | ctrs <- U.envConstructors env,
+            Just (sym@SymT {env}) 
+                                  | ctrs <- U.envConstructors env,
                                     not (null ctrs)
                                     || inPrelude clas.pack g && clas.base == "ArrayElement" 
                                     || inPrelude clas.pack g && clas.base == "JavaType" 
@@ -89,11 +116,26 @@ deriveInst d = do
 --- List of derivable classes
 --- Note that special classes like 'Exceptional' and 'JavaType' are not listed here.
 --- This controls also whether type variables in the instance type must have the same class membership.
-derivable = ["Hashable", "Eq", "Ord", "Enum", "Bounded", "Show", "Exceptional"]
+derivable = ["Hashable", "Eq", "Ord", "Enum", "Bounded", "Show", "Exceptional", "FromJSON"]
 
 --- arity of a constructor
 arity ∷ Symbol → Int
 arity sym = length (Symbol.flds sym)
+import frege.compiler.types.ImportDetails
+
+derive Show CAltS
+derive Show CKind
+derive Show ExprS
+derive Show ImportItem
+derive Show ImportList
+derive Show s => Show (ConField s)
+derive Show DCon
+derive Show DefinitionS
+derive Show s => Show (SigmaT s)
+derive Show s => Show (MetaTvT s)
+derive Show s => Show (TauT s)
+derive Show s => Show (RhoT s)
+derive Show s => Show (ContextT s)
 
 deriveClass :: Position → QName → Symbol → [Symbol] → RhoT SName -> Global → String → [DefinitionS]
 deriveClass pos clas forty ctrs instrho g toderive = deriveClass toderive
@@ -206,7 +248,126 @@ deriveClass pos clas forty ctrs instrho g toderive = deriveClass toderive
 
         -- derive Hashable
         deriveClass "Hashable" = [publicfun "hashCode" [parg1] hash]
-
+        -- derive FromJSON
+        deriveClass "FromJSON" = [publicfun "fromJSON" [parg1] fromJson] where
+          fromJson = if length ctrs == 1 then singleCtor (head ctrs) else multipleCtors
+          -- if a type as multiple ctor, it is discriminated by a field `case` with the ctor name as value
+          multipleCtors = Case CNormal varg1 (lookForCaseField ctrs) where
+            lookForCaseField ctrs = [ctorCase ctrs, cErr] 
+            ctorCase ctrs = calt matchStruct lookForCase
+            lookForCase = nApp (nApp flatMap (fieldInStruct "case")) (lam parg2 (findCtor ctrs))
+            fieldInStruct name = (nApp (nApp field (string name)) (var "as"))
+            findCtor ctrs = Case CNormal varg2 ((alts ctrs) ++ [cErr])
+            -- handles: `{ "case": "CtorName" }`
+            alts ctrs = map (\(name, ctr) -> calt (string name) (singleCtor ctr)) (zipped ctrs)
+            zipped    = map (\ctr -> (ctr.name.key, ctr))
+          lam pat expr = Lam pat expr False
+          singleCtor ctr = Case CNormal varg1 (alts ctr)
+          alts ctr = [cStruct ctr, cErr]
+          cStruct :: Symbol -> CAltS
+          cStruct (ctr@(SymD{flds, name, typ})) = calt matchStruct (exprFields flds ctr)
+          cStruct noCtor = error "Illegal state: At this position it can only be a ctor"
+          exprFields :: [ConField QName] -> Symbol -> ExprS
+          -- if there is a field without a name we are working with a ctr which 
+          -- does not use record syntax, thus we need to handle the JSON differently
+          exprFields fields ctr = 
+            if (any (\f -> f.name == Nothing) fields) then 
+              handleNonRecord (length fields) ctr
+            else
+              handleRecord fields ctr 
+          handleNonRecord 1 ctr = Infx fmap.name (con ctr) (requiredField (string ctr.name.key))
+          handleNonRecord n ctr = Infx flatMap.name (requiredField (string ctr.name.key)) (lam parg2 (handleArr n ctr)) 
+            where
+              handleArr fieldCount ctr = Case CNormal varg2 ([cArray, cErr])
+              cArray = calt matchArray (app n)
+              matchArray = nApp Con { name = arraySName } (var "flds") 
+              arraySName = With1 pos.first.{ tokid=CONID, value="JSON" } pos.first.{tokid=CONID, value="Array"}
+              -- from here on we work with a tuple to use a state: (ctorToApply, listOfRemainingValues) 
+              -- the first element will finally contain the finished value
+              app n = Infx flatMap.name parseFirst (parseRest n) where
+                parseFirst = updateState (con ctr) (var "flds") (parseHead (var "flds"))
+                -- At this position we know, that there *must* be at least 2 fields for the ctor
+                -- For convenience reasons we make heavy use of shadowing (parsed & tpl). This lets us reuse functions way more easy
+                parseRest n | n > 2  = (lam tpl (Infx flatMap.name (updateState firstTplEl secondTplEl (parseHead secondTplEl)) (parseRest (n - 1))))
+                            | otherwise = parseLast
+                parseLast = (lam tpl (Infx fmap.name firstTplEl (parseHead secondTplEl)))
+                parseHead (list :: ExprS) = nApp fromJSON (nApp head' list)
+                updateState ctr state = Infx fmap.name (lam (var "parsed") createTuple) where
+                  createTuple = (vtup (nApp ctr (var "parsed")) (nApp tail' state))
+                secondTplEl = (nApp snd' tpl)
+                firstTplEl  = (nApp fst' tpl)
+                tpl         = (var "tpl")
+          requiredField fieldName = (nApp (nApp field fieldName) (var "as"))
+          handleRecord :: [ConField QName] -> Symbol -> ExprS
+          handleRecord fields ctr = appFields (reverse fields) where
+            appFields :: [ConField QName] -> ExprS
+            appFields []         = con ctr -- if we have no fields in the CTOR, we have nothing to do
+            appFields (f:[])     = Infx fmap.name (con ctr) (singleField f)
+            appFields (f:fields) = Infx app.name (appFields fields) (singleField f)
+            -- parses a single required or optional field
+            singleField :: ConField QName -> ExprS
+            singleField field 
+              | isRequiredType field.typ.rho -> requiredField name
+              | otherwise                    -> optionalField name
+                where 
+                -- A RhoFun only appears if one derives for a data decl with a 
+                -- function field type. A function is always required (otherwise 
+                -- it wouldn't be a RhoFun but a RhoTau.)
+                isRequiredType (RhoFun _ _ _) = True
+                isRequiredType (RhoTau _ tau) = case tau of
+                  -- Tau is a Meta? 
+                  -- -> type for this field field is not known yet, we need to 
+                  -- search the AST, and then check by that if it is required
+                  (Meta _) -> isRequiredType typeInAst
+                    where 
+                      typeInAst     = sigma.rho
+                      (sigma, _)      = State.run qualifiedSigma g 
+                      qualifiedSigma  = U.transSigma unqualifiedType
+                      unqualifiedType = getTypeFromAst forty ctr field g.sub.sourcedefs
+                      -- The field in question is qualified by the ctr it 
+                      -- belongs to which is then qualified by the data decl 
+                      -- it belongs to. 
+                      getTypeFromAst :: Symbol -> Symbol -> ConField QName -> [DefinitionS] -> SigmaS
+                      getTypeFromAst (SymT{name=dataName}) (SymD{name=ctrName}) conField defs = head 
+                        [ typ | d@(DatDcl _ _ dName _ _ _ _ _) <- defs -- only keep data declarations
+                        , ctr@(DCon _ _ cName _ _) <- d.ctrs           -- in each data decl , find the ctrs
+                        , (Field _ (Just fName) _ _ _ typ) <- ctr.flds -- in each ctr find the fields
+                        , dName == dataName.base &&                    -- only keep the data decl containing the correct ctr
+                          cName == ctrName.base &&                     -- only keep the ctr containing the field in question
+                          fName == fieldName conField                  -- only keep the field with the name in question
+                        ]
+                      getTypeFromAst _ _ _ _ = error "Illegal state: at this position these constructors are not possible"
+                  -- type information is already available
+                  _ -> not . isMaybeType $ tau
+                    where 
+                      isMaybeType :: Tau -> Bool
+                      isMaybeType (TCon{name}) = name.base == "Maybe"
+                      isMaybeType (TApp  tau _ ) = isMaybeType tau
+                      isMaybeType _ = False
+                optionalField :: ExprS  -> ExprS
+                optionalField fieldName = (nApp (nApp optField fieldName) (var "as"))
+                name = string . fieldName $ field
+                fieldName :: ConField QName -> String
+                fieldName f = case f.name of
+                  Nothing     -> error "Illegal state: at this position we already know that every field has a name"
+                  (Just name) -> name
+          con ctr = Con { name = cname ctr }
+          field = gvar "JSON" "field"
+          fst' = var "fst"
+          snd' = var "snd"
+          optField = gvar "JSON" "optional"
+          fromJSON = gvar "JSON" "fromJSON"
+          head' = gvar "PreludeList" "head"
+          tail' = gvar "PreludeList" "tail"
+          flatMap = gvar2 "PreludeMonad" "Bind" ">>="
+          fmap = gvar "PreludeMonad" "<$>"
+          app = gvar2 "PreludeMonad" "Apply" "<*>"
+          matchStruct = nApp Con { name=structSName } (var "as") 
+          structSName = With1 pos.first.{tokid=CONID, value="JSON"} pos.first.{tokid=CONID, value="Struct"}
+          cErr   = calt (var "garbage") (nApp opFail errMsg)
+          errMsg = nApp (nApp vApp (string $ "Couldn't decode " ++ forty.nicer g ++ " from: ")) showGarbage
+          showGarbage = nApp vShow (var "garbage")
+          opFail = gvar2 "PreludeMonad" "MonadFail" "fail"
         -- derive Eq
         deriveClass "Eq" = [publicfun "==" [parg1,parg2] ifx, publicfun "hashCode" [parg1] hash] where
             ifx   = if length ctrs == 1 then eex else Ifte cond eex vFalse
@@ -398,8 +559,7 @@ deriveDcls pos clas forty ctrs instrho = do
                         ++ ", only native types are allowed. "
                         ++ "(Did you want do derive JavaType?)"))
                     return []
-        TName ppp ccc | inPrelude ppp g,
-                        ccc `elem` derivable = stio (dC ccc)
+        TName ppp ccc | ccc `elem` derivable = stio (dC ccc)
         _ -> do
             E.error pos (msgdoc ("Can't derive " ++ clas.nice g
                 ++ ", only Prelude classes Eq, Ord, Enum, Bounded and Show may be derived."))
